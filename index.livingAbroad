@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Living Abroad – Interaktive Karte</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<style>
+html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+#map { height: 100vh; width: 100vw; transition: width 0.25s ease; float: left; }
+#info-panel {
+  position: fixed; right: 0; top: 0; height: 100vh; width: 0; max-width: 45%;
+  box-shadow: -6px 0 18px rgba(0,0,0,0.12); overflow-y: auto;
+  transition: width 0.25s ease, padding 0.25s ease; padding: 0; z-index: 1000;
+}
+#info-panel.open { width: 40%; padding: 20px 24px; }
+#info-panel .close-btn {
+  display: inline-block; background: rgba(0,0,0,0.10); border-radius: 6px;
+  padding: 6px 10px; cursor: pointer; margin-bottom: 12px; font-weight: 600;
+}
+.panel-title { margin: 0 0 8px 0; font-size: 20px; font-weight: 700; }
+.panel-subtitle { margin: 0 0 16px 0; color: #444; font-size: 14px; }
+.detail-row { margin: 10px 0; line-height: 1.45; }
+.detail-row b { display: inline-block; width: 120px; color: #222; }
+.highlight {
+  border-left: 4px solid rgba(0,0,0,0.15);
+  padding: 10px; margin: 12px 0; border-radius: 6px;
+  background: rgba(255,255,255,0.35);
+}
+.program-list { margin: 8px 0 0 0; padding-left: 18px; }
+.program-list li { margin: 5px 0; }
+.program-list a { color: #1a73e8; text-decoration: none; font-weight: 500; }
+.program-list a:hover { text-decoration: underline; }
+.small-note { margin-top: 12px; font-size: 13px; color: #555; }
+.rating-stars { color: #f5b301; font-weight: 700; }
+
+/* Programme-Links Sektion */
+.country-links {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0,0,0,0.12);
+}
+.country-links .section-label {
+  margin: 0 0 8px 0;
+  font-weight: 700;
+  font-size: 13px;
+  color: #222;
+}
+.country-links a {
+  display: inline-block;
+  margin: 4px 6px 4px 0;
+  padding: 5px 11px;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 20px;
+  font-size: 13px;
+  color: #1a73e8;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.country-links a:hover { background: rgba(255,255,255,0.85); text-decoration: underline; }
+
+/* Quellen-Sektion */
+.source-links {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0,0,0,0.12);
+}
+.source-links .section-label {
+  margin: 0 0 8px 0;
+  font-weight: 700;
+  font-size: 13px;
+  color: #222;
+}
+.source-links a {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 5px 0;
+  font-size: 13px;
+  color: #1a73e8;
+  text-decoration: none;
+}
+.source-links a:hover { text-decoration: underline; }
+.source-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.08);
+  color: #444;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  #info-panel.open { width: 100%; }
+  #map { width: 100%; }
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<aside id="info-panel" aria-hidden="true"></aside>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+const map = L.map('map', {
+  minZoom: 2, maxZoom: 6, worldCopyJump: false,
+  maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1
+}).setView([20, 0], 2);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap-Mitwirkende', maxZoom: 19, noWrap: true
+}).addTo(map);
+
+const infoPanel = document.getElementById('info-panel');
+
+function openPanel(htmlContent, countryName, bgColor) {
+  infoPanel.style.background = bgColor || '#ffffff';
+  infoPanel.innerHTML = `
+    <div class="close-btn" id="panel-close">Close ✕</div>
+    <h2 class="panel-title">${countryName}</h2>
+    <div class="panel-subtitle">Detailed living abroad profile</div>
+    ${htmlContent}
+  `;
+  infoPanel.classList.add('open');
+  infoPanel.setAttribute('aria-hidden', 'false');
+  if (window.innerWidth > 900) document.getElementById('map').style.width = '60%';
+  else document.getElementById('map').style.width = '100%';
+  setTimeout(() => map.invalidateSize(), 300);
+  document.getElementById('panel-close').addEventListener('click', closePanel);
+}
+
+function closePanel() {
+  infoPanel.classList.remove('open');
+  infoPanel.setAttribute('aria-hidden', 'true');
+  infoPanel.innerHTML = '';
+  document.getElementById('map').style.width = '100%';
+  setTimeout(() => map.invalidateSize(), 300);
+}
+
+const countries = [
+  {
+    name: "USA",
+    coords: [38.0, -97.0],
+    bgColor: "#dce8f5",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.500–2.500 € (typical, varies by city)</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Extremely varied — from tropical Florida to arctic Alaska</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> A diverse and open society with a strong performance and career focus. Regional differences are large — urban centers are fast-paced, while many areas are more relaxed.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> American English with many regional accents; widely understood everywhere.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Home to world-class universities and many top-ranked schools; excellent higher education opportunities.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Predominantly private and expensive — health insurance is essential for residents and long-term visitors.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~9–11 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.yfu.de/schueleraustausch/gastlaender/usa" target="_blank">YFU USA</a></li>
+        <li><a href="https://www.afs.de/programs/schueleraustausch-usa/" target="_blank">AFS USA</a></li>
+        <li><a href="https://www.ef.de/aya/destinations/united-states/" target="_blank">EF High School Exchange USA</a></li>
+      </ul>
+      <div class="small-note">Tip: Research city-specific costs (e.g., New York vs. Midwest) and secure health insurance before departure.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Vereinigte_Staaten" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/usa-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/usa" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/usa" target="_blank">WHO USA <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.oecd.org/unitedstates/" target="_blank">OECD USA <span class="source-tag">Wirtschaft</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=United+States" target="_blank">Numbeo USA <span class="source-tag">Lebenshaltungskosten</span></a>
+        <a href="https://www.ghsindex.org/country/united-states/" target="_blank">GHS Index USA <span class="source-tag">Sicherheit</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Kanada",
+    coords: [56.0, -106.0],
+    bgColor: "#fde8e8",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.200–2.000 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Cold winters, pleasant summers — large regional differences</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Very multicultural and tolerant; cities are welcoming to internationals.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Clear, easy-to-understand English; French in Quebec.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Excellent public school system and strong universities.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Publicly funded and generally accessible (varies by province).</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~8–10 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.yfu.de/schueleraustausch/gastlaender/kanada" target="_blank">YFU Kanada</a></li>
+        <li><a href="https://www.sts-education.com/de/high-school/kanada/" target="_blank">STS Kanada</a></li>
+        <li><a href="https://www.experiment-ev.de/schueleraustausch/kanada/" target="_blank">Experiment Kanada</a></li>
+      </ul>
+      <div class="small-note">Tip: Consider provincial differences in services and cost of living; major cities are pricier.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Kanada" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/kanada-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/canada" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/can" target="_blank">WHO Kanada <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.oecd.org/canada/" target="_blank">OECD Kanada <span class="source-tag">Wirtschaft</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Canada" target="_blank">Numbeo Kanada <span class="source-tag">Lebenshaltungskosten</span></a>
+        <a href="https://www.visionofhumanity.org/maps/#/" target="_blank">Global Peace Index <span class="source-tag">Sicherheit</span></a>
+      </div>
+    `
+  },
+  {
+    name: "UK",
+    coords: [54.0, -2.0],
+    bgColor: "#f0eaf7",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.500–2.200 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Cool, often cloudy and rainy</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> A mix of tradition and modernity; politeness and etiquette are valued.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> British English (RP and regional accents) — excellent for formal English learning.</div>
+      <div class="detail-row"><b>🎓 Education:</b> World-class institutions (Oxford, Cambridge) and strong secondary education (A-Levels).</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> NHS provides free care for students in many cases — check program specifics.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~2 hours (or train from parts of Europe)</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.ef.de/aya/destinations/united-kingdom/" target="_blank">EF Großbritannien</a></li>
+        <li><a href="https://www.afs.de/countries/grossbritannien/" target="_blank">AFS Großbritannien</a></li>
+        <li><a href="https://www.rotary.org/en/our-programs/youth-exchanges" target="_blank">Rotary Youth Exchange</a></li>
+      </ul>
+      <div class="small-note">Tip: Living costs vary strongly between London and smaller towns; public transport is excellent in many regions.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Vereinigtes_Königreich" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/grossbritannien-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/great-britain" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://ourworldindata.org/country/united-kingdom" target="_blank">Our World in Data <span class="source-tag">Statistiken</span></a>
+        <a href="https://www.gov.uk/government/organisations/department-for-education" target="_blank">Dept. for Education <span class="source-tag">Bildung</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=United+Kingdom" target="_blank">Numbeo UK <span class="source-tag">Lebenshaltungskosten</span></a>
+        <a href="https://www.nhs.uk/" target="_blank">NHS <span class="source-tag">Gesundheit</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Irland",
+    coords: [53.0, -8.0],
+    bgColor: "#e2f5e5",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.200–1.800 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Cool, green, often rainy</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Warm and sociable — strong pub culture and friendly locals.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Clear Irish English with a friendly accent.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Solid education system; international schools available in larger cities.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Public system, generally good access.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~2.5–3 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.ef.de/aya/destinations/ireland/" target="_blank">EF Irland</a></li>
+        <li><a href="https://www.sprachcaffe.com/deutsch/sprachreisen-irland.htm" target="_blank">Sprachcaffe Irland</a></li>
+        <li><a href="https://www.boalingua.de/sprachreisen/irland/" target="_blank">Boa Lingua Irland</a></li>
+      </ul>
+      <div class="small-note">Tip: Ireland is compact — travel times are short and community life is strong.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Irland" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/irland-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/ireland" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.oecd.org/ireland/" target="_blank">OECD Irland <span class="source-tag">Wirtschaft</span></a>
+        <a href="https://www.who.int/countries/irl" target="_blank">WHO Irland <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Ireland" target="_blank">Numbeo Irland <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Australien",
+    coords: [-25.0, 133.0],
+    bgColor: "#fff4d6",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.400–2.200 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Warm to tropical; lots of sunshine</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Laid-back, outdoor-oriented and friendly.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Australian English with a distinct accent.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Very good school system and many international programs.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Public system with good standards.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~20–22 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.yfu.de/schueleraustausch/gastlaender/australien" target="_blank">YFU Australien</a></li>
+        <li><a href="https://www.sts-education.com/de/high-school/australien/" target="_blank">STS Australien</a></li>
+        <li><a href="https://aiesec.org" target="_blank">AIESEC Australien</a></li>
+      </ul>
+      <div class="small-note">Tip: Long travel time — plan arrival and orientation carefully.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Australien" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/australien-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/australia" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/aus" target="_blank">WHO Australien <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.aihw.gov.au/" target="_blank">AIHW <span class="source-tag">Gesundheitsstatistik</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Australia" target="_blank">Numbeo Australien <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Neuseeland",
+    coords: [-41.0, 174.0],
+    bgColor: "#e0f2ee",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.200–1.800 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Temperate, lots of nature and rainfall</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Relaxed, nature-focused with strong Māori influence.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> English similar to Australian English, generally very clear.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Excellent schools with smaller class sizes.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Public and very good.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~23–25 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.yfu.de/schueleraustausch/gastlaender/neuseeland" target="_blank">YFU Neuseeland</a></li>
+        <li><a href="https://www.sts-education.com/de/high-school/neuseeland/" target="_blank">STS Neuseeland</a></li>
+        <li><a href="https://www.ef.de/aya/destinations/new-zealand/" target="_blank">EF Neuseeland</a></li>
+      </ul>
+      <div class="small-note">Tip: Ideal for outdoor lovers and those seeking a calm lifestyle.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Neuseeland" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/neuseeland-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/new-zealand" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.health.govt.nz/" target="_blank">Ministry of Health NZ <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.commonwealthfund.org/international-health-policy-center/countries/new-zealand" target="_blank">Commonwealth Fund <span class="source-tag">Gesundheitssystem</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=New+Zealand" target="_blank">Numbeo Neuseeland <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Südafrika",
+    coords: [-30.0, 25.0],
+    bgColor: "#fef3e2",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 600–1.000 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Warm, sunny and rather dry in many regions</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Extremely diverse; 11 official languages and rich traditions.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> South African English accent; generally understandable.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Quality varies strongly by region and institution.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Private clinics are good; public system can be weaker in places.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~11–13 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.weltwaerts.de" target="_blank">Weltwärts</a></li>
+        <li><a href="https://aiesec.org" target="_blank">AIESEC Südafrika</a></li>
+        <li><a href="https://www.experiment-ev.de/schueleraustausch/suedafrika/" target="_blank">Experiment Südafrika</a></li>
+      </ul>
+      <div class="small-note">Tip: Take safety precautions and research local conditions regionally.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Südafrika" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/suedafrika-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/south-africa" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/zaf" target="_blank">WHO Südafrika <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.statssa.gov.za/" target="_blank">Statistics South Africa <span class="source-tag">Statistiken</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=South+Africa" target="_blank">Numbeo Südafrika <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Singapur",
+    coords: [1.35, 103.82],
+    bgColor: "#fde9e9",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 1.800–2.800 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Tropical, hot and humid year-round</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> A blend of Asian and Western influences; extremely clean and disciplined.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> English widely used (Singlish influences in informal speech); school English is excellent.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Top PISA results and high academic standards.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> World-class medical services.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~12–13 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://aiesec.org" target="_blank">AIESEC Singapur</a></li>
+        <li><a href="https://www.rotary.org/en/our-programs/youth-exchanges" target="_blank">Rotary Youth Exchange</a></li>
+      </ul>
+      <div class="small-note">Tip: Expect high living costs but excellent infrastructure and safety.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Singapur" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/singapur-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/singapore" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/sgp" target="_blank">WHO Singapur <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.moh.gov.sg/" target="_blank">Ministry of Health SG <span class="source-tag">Gesundheitssystem</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Singapore" target="_blank">Numbeo Singapur <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Indien",
+    coords: [21.0, 78.0],
+    bgColor: "#fff0d8",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 400–700 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> From tropical to dry; often very hot</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Intense, colorful and religiously diverse; strong local traditions.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Indian English — fast and melodic in many regions.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Top institutions like the IITs exist, but overall quality varies.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Private care recommended for many expats.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~8–10 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.weltwaerts.de" target="_blank">Weltwärts Indien</a></li>
+        <li><a href="https://aiesec.org" target="_blank">AIESEC Indien</a></li>
+        <li><a href="https://www.experiment-ev.de/schueleraustausch/indien/" target="_blank">Experiment Indien</a></li>
+      </ul>
+      <div class="small-note">Tip: Prepare for cultural differences and plan vaccinations and insurance ahead.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Indien" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/indien-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/india" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/ind" target="_blank">WHO Indien <span class="source-tag">Gesundheit</span></a>
+        <a href="https://ourworldindata.org/country/india" target="_blank">Our World in Data <span class="source-tag">Statistiken</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=India" target="_blank">Numbeo Indien <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Jamaika",
+    coords: [18.1, -77.3],
+    bgColor: "#e8f5e2",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 700–1.100 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Tropical, warm and sunny</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Caribbean vibe — relaxed, musical (Reggae) and community-oriented.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Jamaican Patois alongside Standard English.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Limited international program availability in some areas.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Limited public services — private insurance recommended.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~11–12 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.afs.de" target="_blank">AFS Internationale Programme</a></li>
+        <li><a href="https://www.rotary.org/en/our-programs/youth-exchanges" target="_blank">Rotary Youth Exchange</a></li>
+      </ul>
+      <div class="small-note">Tip: Enjoy the culture but plan for limited infrastructure in some regions.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Jamaika" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/jamaika-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/jamaica" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/jam" target="_blank">WHO Jamaika <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.paho.org/en" target="_blank">PAHO Karibik <span class="source-tag">Gesundheit Regional</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Jamaica" target="_blank">Numbeo Jamaika <span class="source-tag">Lebenshaltungskosten</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Argentinien",
+    coords: [-34.0, -64.0],
+    bgColor: "#e8f0fb",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 500–900 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Varied — subtropical in the north, Patagonian cold in the south</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Warm and passionate — tango, football and a vibrant café culture define everyday life. Buenos Aires is one of Latin America's most cosmopolitan cities.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Argentine Spanish (Rioplatense) — a great destination for Spanish learners.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Strong university tradition; public universities are free and internationally recognised.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Public healthcare available; private insurance recommended for expats.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~13–15 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.afs.de" target="_blank">AFS Argentinien</a></li>
+        <li><a href="https://www.yfu.de/schueleraustausch/gastlaender" target="_blank">YFU Argentinien</a></li>
+        <li><a href="https://www.experiment-ev.de" target="_blank">Experiment Argentinien</a></li>
+      </ul>
+      <div class="small-note">Tip: The currency situation can be complex — research exchange rates and carry-on cash options before departure.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Argentinien" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/argentinien-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/argentina" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/arg" target="_blank">WHO Argentinien <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.oecd.org/argentina/" target="_blank">OECD Argentinien <span class="source-tag">Wirtschaft</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Argentina" target="_blank">Numbeo Argentinien <span class="source-tag">Lebenshaltungskosten</span></a>
+        <a href="https://ourworldindata.org/country/argentina" target="_blank">Our World in Data <span class="source-tag">Statistiken</span></a>
+      </div>
+    `
+  },
+  {
+    name: "Japan",
+    coords: [36.0, 138.0],
+    bgColor: "#fde8ed",
+    infoHtml: `
+      <div class="highlight">
+        <div class="detail-row"><b>🔒 Safety:</b> <span class="rating-stars">⭐⭐⭐⭐⭐</span></div>
+        <div class="detail-row"><b>💶 Monthly cost:</b> 900–1.600 €</div>
+        <div class="detail-row"><b>☀️ Climate:</b> Four distinct seasons — hot humid summers, cold winters, mild spring and autumn</div>
+      </div>
+      <div class="detail-row"><b>🎭 Culture:</b> Deeply rooted traditions alongside cutting-edge modernity. Respectful, punctual and community-oriented society — a fascinating contrast to Western lifestyles.</div>
+      <div class="detail-row"><b>🗣️ Language:</b> Japanese — very different from European languages; basic phrases help enormously. English is limited outside major cities.</div>
+      <div class="detail-row"><b>🎓 Education:</b> Highly disciplined school system with excellent academic standards and strong focus on group learning.</div>
+      <div class="detail-row"><b>🏥 Healthcare:</b> Excellent public healthcare system; affordable and high quality.</div>
+      <div class="detail-row"><b>✈️ Flight time:</b> ~11–13 hours from Central Europe</div>
+      <div class="detail-row"><b>🔗 Programs:</b></div>
+      <ul class="program-list">
+        <li><a href="https://www.yfu.de/schueleraustausch/gastlaender" target="_blank">YFU Japan</a></li>
+        <li><a href="https://www.afs.de" target="_blank">AFS Japan</a></li>
+        <li><a href="https://www.rotary.org/en/our-programs/youth-exchanges" target="_blank">Rotary Youth Exchange Japan</a></li>
+      </ul>
+      <div class="small-note">Tip: Learn some basic Japanese before arrival and be prepared for a very different daily routine — it is one of the most rewarding cultural immersions possible.</div>
+
+      <div class="country-links">
+        <div class="section-label">🌐 Allgemeine Informationen</div>
+        <a href="https://de.wikipedia.org/wiki/Japan" target="_blank">Wikipedia</a>
+        <a href="https://www.auswaertiges-amt.de/de/service/laender/japan-node" target="_blank">Auswärtiges Amt</a>
+        <a href="https://www.lonelyplanet.com/japan" target="_blank">Lonely Planet</a>
+      </div>
+
+      <div class="source-links">
+        <div class="section-label">📊 Weiterführende Quellen</div>
+        <a href="https://www.who.int/countries/jpn" target="_blank">WHO Japan <span class="source-tag">Gesundheit</span></a>
+        <a href="https://www.oecd.org/japan/" target="_blank">OECD Japan <span class="source-tag">Wirtschaft</span></a>
+        <a href="https://www.numbeo.com/cost-of-living/country_result.jsp?country=Japan" target="_blank">Numbeo Japan <span class="source-tag">Lebenshaltungskosten</span></a>
+        <a href="https://ourworldindata.org/country/japan" target="_blank">Our World in Data <span class="source-tag">Statistiken</span></a>
+      </div>
+    `
+  }
+];
+
+countries.forEach(country => {
+  const marker = L.marker(country.coords).addTo(map);
+  marker.on('click', () => {
+    openPanel(country.infoHtml, country.name, country.bgColor);
+  });
+  marker.bindTooltip(country.name, { permanent: false, direction: 'top' });
+});
+
+map.on('click', function (e) {
+  const { lat, lng } = e.latlng;
+  L.popup()
+    .setLatLng(e.latlng)
+    .setContent(`<b>Koordinaten:</b><br>Breite: ${lat.toFixed(2)}, Länge: ${lng.toFixed(2)}`)
+    .openOn(map);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && infoPanel.classList.contains('open')) closePanel();
+});
+
+window.addEventListener('resize', () => {
+  if (!infoPanel.classList.contains('open')) {
+    document.getElementById('map').style.width = '100%';
+  } else {
+    document.getElementById('map').style.width = window.innerWidth > 900 ? '60%' : '100%';
+  }
+  setTimeout(() => map.invalidateSize(), 250);
+});
+</script>
+</body>
+</html>
